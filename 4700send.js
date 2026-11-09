@@ -13,6 +13,11 @@ let notAckMap = new Map();
 let windowSize = 4;
 let stringToSend = "";
 
+const old_rttMultiplier = 0.875;
+const new_rttMultiplier = 0.125;
+let old_rtt = 0;
+let rto = 1267;
+
 function checksumHelper(data) {
     let total = 0;
     const dataArray = data.split("");
@@ -64,9 +69,22 @@ function sendDataHelper() {
     const currentTime = Date.now();
     notAckMap.set(sequenceNumberToSend, 
         {dataStored: dataStored, 
-        currentTime: currentTime
+        createTime: currentTime
         });
     sequenceNumberToSend++;
+}
+
+function updateRTTHelper(createTime) {
+    const totalTime = Date.now() - createTime;
+    let currentNew_rtt;
+    //for first time there is no measurement so use total time as new rtt
+    if(old_rtt === 0) {
+        currentNew_rtt = totalTime;
+    }
+    else {
+        currentNew_rtt  = old_rtt * old_rttMultiplier + totalTime * new_rttMultiplier;
+    }
+    return {currentNew_rtt};
 }
 
 function fromReceiverHandler(msg, rinfo) {
@@ -82,7 +100,7 @@ function fromReceiverHandler(msg, rinfo) {
         const receivedNeededSN = dataFromReceiver.NeededSN;
         const receivedReceiveSN = dataFromReceiver.receiveSN;
 
-        const {dataStored, currentTime} = notAckMap.get(receivedReceiveSN) || {};
+        const {dataStored, createTime} = notAckMap.get(receivedReceiveSN) || {};
         if(!dataStored) {
             throw new Error("no data for this sequence number");
         }
@@ -94,6 +112,11 @@ function fromReceiverHandler(msg, rinfo) {
         if(receivedReceiveSN > sequenceNumberToSend) {
             throw new Error("receive SN is greater than sequence number to send");
         }
+
+        //updatge the round trip time estimation
+        const {currentNew_rtt} = updateRTTHelper(createTime);
+        old_rtt = currentNew_rtt;
+        rto = currentNew_rtt  * 2;
 
         const calculatedChecksum = checksumHelper(dataStored.info);
         if(receivedChecksum !== calculatedChecksum) {
@@ -128,7 +151,7 @@ function fromReceiverHandler(msg, rinfo) {
 
 }
 
-function sendDataHelper(sequenceNumber, dataStored, currentTime) {
+function resendNotAckData(sequenceNumber, dataStored, currentTime) {
     const objectToResend = JSON.stringify({
         sequenceNumber: sequenceNumber,
         info: dataStored.info,
@@ -140,18 +163,18 @@ function sendDataHelper(sequenceNumber, dataStored, currentTime) {
 function resendDataHelper() {
     const entriesOfMap = notAckMap.entries();
 
-    for(const [sequenceNumber, {dataStored, currentTime}] of entriesOfMap) {
+    for(const [sequenceNumber, {dataStored, createTime}] of entriesOfMap) {
         
-        const updatedTime = currentTime + 2000;
+        const updatedTime = createTime + rto;
         if(updatedTime < Date.now()) {
             //resend the data
-            sendDataHelper(sequenceNumber, dataStored, currentTime);
+            resendNotAckData(sequenceNumber, dataStored, createTime);
 
             const currentTime = Date.now();
             notAckMap.set(sequenceNumber, 
                 {
                     dataStored: dataStored, 
-                    currentTime: currentTime
+                    createTime: currentTime
                 });
         }
     }
