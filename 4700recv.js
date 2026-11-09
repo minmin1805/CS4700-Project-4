@@ -46,7 +46,7 @@ for(const key of keysFromMap) {
 function sendAckHelper(datagram) {
     const sequenceNumToReport = datagram.sequenceNumber;
     const checksumToSend = checksumHelper(datagram.info)
-    const ackToSend = JSON.stringify({ receiveSN: sequenceNumToReport, sendSN: sequenceNumberWaitingFor, checksum: checksumToSend });
+    const ackToSend = JSON.stringify({ receiveSN: sequenceNumToReport, NeededSN: sequenceNumberWaitingFor, checksum: checksumToSend });
     udpSocket.send(ackToSend, senderPort, senderAddress);
 }
 

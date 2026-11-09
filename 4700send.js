@@ -63,6 +63,65 @@ function sendDataHelper() {
     sequenceNumberToSend++;
 }
 
+function fromReceiverHandler(msg, rinfo) {
+    try {
+        const dataFromReceiver = JSON.parse(msg);
+
+        //check if checksumi is not int, neededSN is not int, or receiveSN is not int
+        if(!Number.isInteger(dataFromReceiver.checksum) || !Number.isInteger(dataFromReceiver.NeededSN) || !Number.isInteger(dataFromReceiver.receiveSN)) {
+            throw new Error("some of the fields are not correct types");
+        }
+
+        const receivedChecksum = dataFromReceiver.checksum;
+        const receivedNeededSN = dataFromReceiver.NeededSN;
+        const receivedReceiveSN = dataFromReceiver.receiveSN;
+
+        const stringForThisSeq = notAckMap.get(receivedReceiveSN);
+        if(!stringForThisSeq) {
+            throw new Error("no data for this sequence number");
+        }
+
+        if(receivedNeededSN > sequenceNumberToSend) {
+            throw new Error("needed SN is greater than sequence number to send");
+        }
+
+        if(receivedReceiveSN > sequenceNumberToSend) {
+            throw new Error("receive SN is greater than sequence number to send");
+        }
+
+        const calculatedChecksum = checksumHelper(stringForThisSeq.info);
+        if(receivedChecksum !== calculatedChecksum) {
+            throw new Error("checksum is not correct");
+        }
+
+        notAckMap.delete(receivedReceiveSN);
+        successDataSoFar.push(receivedReceiveSN);
+
+        //check if can remove more from notAckMap
+        const keysSmallerThanReceivedSN = Array.from(notAckMap.keys()).filter(
+            key => key < receivedReceiveSN);
+
+        for(const key of keysSmallerThanReceivedSN) {
+            notAckMap.delete(key);
+        }
+
+        while(notAckMap.size < windowSize && stringToSend.length == 1375) {
+            sendDataHelper();
+            stringToSend = "";
+        }
+
+        //check if all acks are received
+        if(successDataSoFar.length == dataToSend.size) {
+            process.stdout.write("All done!\n");
+            process.exit(0);
+        }
+
+    } catch (error) {
+        process.stderr.write(`Error: ${error.message}\n`);
+    }
+
+}
+
 function main() {
 
     const commandLineArgs = process.argv.slice(2);
@@ -73,8 +132,9 @@ function main() {
     process.stdin.on("data", (chunk) => {
         appendDataHelper(chunk);
         // if possible to send then send
-        while(notAckMap.size < windowSize) {
+        while(notAckMap.size < windowSize && stringToSend.length == 1375) {
             sendDataHelper();
+            stringToSend = "";
         }
     });
 
@@ -83,6 +143,7 @@ function main() {
         //check if there is data left to send
         if(stringToSend.length > 0) {
             sendDataHelper();
+            stringToSend = "";
         }
         dataInHasStopped = true;
         //check if all acks 
@@ -90,6 +151,10 @@ function main() {
             process.stdout.write("All done!\n");
             process.exit(0);
         }
+    });
+
+    udpSocket.on("message", (msg, rinfo) => {
+        fromReceiverHandler(msg, rinfo);
     });
 }
 
