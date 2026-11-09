@@ -4,9 +4,9 @@ const datagram = require("dgram");
 
 const udpSocket = datagram.createSocket("udp4");
 
-const senderAddress = null;
-const senderPort = null;
-const sequenceNumberWaitingFor = 0;
+let senderAddress = null;
+let senderPort = null;
+let sequenceNumberWaitingFor = 0;
 
 const receivedEarlyMap = new Map();
 
@@ -19,7 +19,7 @@ function checkSender(address, port) {
 }
 
 function checksumHelper(info) {
-    const total = 0;
+    let total = 0;
     const infoArray = info.split("");
     for(const eachChar of infoArray) {
         const charEncoded = eachChar.charCodeAt(0);
@@ -29,9 +29,14 @@ function checksumHelper(info) {
     return total;
 }
 
+function printDataStdout(info) {
+    fs.writeSync(1, info);
+}
+
 function checkForEarlyData() {
     
-const keysFromMap = Array.from(receivedEarlyMap.keys());
+const keysFromMap = Array.from(receivedEarlyMap.keys()).sort((a, b) => 
+    a - b);
 
 for(const key of keysFromMap) {
     if(key == sequenceNumberWaitingFor) {
@@ -39,6 +44,8 @@ for(const key of keysFromMap) {
         printDataStdout(receivedEarlyMap.get(key));
         //remove from map
         receivedEarlyMap.delete(key);
+        //now we need the next one
+        sequenceNumberWaitingFor++;
     }
 }
 }
@@ -73,7 +80,9 @@ function processDatagram(newDatagram, rinfo) {
         }
 
         if(currentSequenceNumber > sequenceNumberWaitingFor) {
-            receivedEarlyMap.set(sequenceNumber, info);
+            receivedEarlyMap.set(currentSequenceNumber, info);
+            //send ack for the early packet too
+            sendAckHelper(newDatagram);
         }
         else if(currentSequenceNumber < sequenceNumberWaitingFor) {
             sendAckHelper(newDatagram);
@@ -86,7 +95,7 @@ function processDatagram(newDatagram, rinfo) {
             //increment sequence number waiting for
             sequenceNumberWaitingFor++;
             //send ack
-            sendAckHelper(currentSequenceNumber);
+            sendAckHelper(newDatagram);
 
             //check map for data that was received early
             checkForEarlyData();
@@ -104,7 +113,12 @@ function processDatagram(newDatagram, rinfo) {
 
 function main() {
     udpSocket.on("message", (msg, rinfo) => {
-        const newDatagram = JSON.parse(msg.toString());
+        let newDatagram;
+        try {
+            newDatagram = JSON.parse(msg.toString());
+        } catch (error) {
+            return;
+        }
         processDatagram(newDatagram, rinfo);
     });
 
