@@ -61,7 +61,11 @@ function sendDataHelper() {
         checksum: checksumCalculate
     });
     udpSocket.send(objectToSend, port, host);
-    notAckMap.set(sequenceNumberToSend, dataStored);
+    const currentTime = Date.now();
+    notAckMap.set(sequenceNumberToSend, 
+        {dataStored: dataStored, 
+        currentTime: currentTime
+        });
     sequenceNumberToSend++;
 }
 
@@ -78,8 +82,8 @@ function fromReceiverHandler(msg, rinfo) {
         const receivedNeededSN = dataFromReceiver.NeededSN;
         const receivedReceiveSN = dataFromReceiver.receiveSN;
 
-        const stringForThisSeq = notAckMap.get(receivedReceiveSN);
-        if(!stringForThisSeq) {
+        const {dataStored, currentTime} = notAckMap.get(receivedReceiveSN) || {};
+        if(!dataStored) {
             throw new Error("no data for this sequence number");
         }
 
@@ -91,7 +95,7 @@ function fromReceiverHandler(msg, rinfo) {
             throw new Error("receive SN is greater than sequence number to send");
         }
 
-        const calculatedChecksum = checksumHelper(stringForThisSeq.info);
+        const calculatedChecksum = checksumHelper(dataStored.info);
         if(receivedChecksum !== calculatedChecksum) {
             throw new Error("checksum is not correct");
         }
@@ -122,6 +126,35 @@ function fromReceiverHandler(msg, rinfo) {
         process.stderr.write(`Error: ${error.message}\n`);
     }
 
+}
+
+function sendDataHelper(sequenceNumber, dataStored, currentTime) {
+    const objectToResend = JSON.stringify({
+        sequenceNumber: sequenceNumber,
+        info: dataStored.info,
+        checksum: checksumHelper(dataStored.info)
+    });
+    udpSocket.send(objectToResend, port, host);
+}
+
+function resendDataHelper() {
+    const entriesOfMap = notAckMap.entries();
+
+    for(const [sequenceNumber, {dataStored, currentTime}] of entriesOfMap) {
+        
+        const updatedTime = currentTime + 2000;
+        if(updatedTime < Date.now()) {
+            //resend the data
+            sendDataHelper(sequenceNumber, dataStored, currentTime);
+
+            const currentTime = Date.now();
+            notAckMap.set(sequenceNumber, 
+                {
+                    dataStored: dataStored, 
+                    currentTime: currentTime
+                });
+        }
+    }
 }
 
 function main() {
@@ -160,6 +193,9 @@ function main() {
     udpSocket.on("message", (msg, rinfo) => {
         fromReceiverHandler(msg, rinfo);
     });
+
+    //set the interval to resend
+    setInterval(resendDataHelper,67);
 }
 
 main();
