@@ -10,8 +10,9 @@ let successDataSoFar = [];
 let dataInHasStopped = false;
 let sequenceNumberToSend = 0;
 let notAckMap = new Map();
-let windowSize = 4;
+let windowSize = 2;
 let stringToSend = "";
+let ssthresh = 20;
 
 const old_rttMultiplier = 0.875;
 const new_rttMultiplier = 0.125;
@@ -28,6 +29,16 @@ function checksumHelper(data) {
     }
     return total;
 }
+
+function increaseWindowSizeBy1() {
+    if(windowSize < ssthresh) {
+        windowSize++;
+    }
+    else {
+        windowSize = windowSize + 1 / windowSize;
+    }
+}
+
 function prepareDataToSend(stringToSend) {
     const checknumCalculate = checksumHelper(stringToSend);
     const packetToStore = {
@@ -126,6 +137,9 @@ function fromReceiverHandler(msg, rinfo) {
         notAckMap.delete(receivedReceiveSN);
         successDataSoFar.push(receivedReceiveSN);
 
+        //increase window size by 1
+        increaseWindowSizeBy1();
+
         //check if can remove more from notAckMap
         const keysSmallerThanReceivedSN = Array.from(notAckMap.keys()).filter(
             key => key < receivedNeededSN);
@@ -133,6 +147,8 @@ function fromReceiverHandler(msg, rinfo) {
         for(const key of keysSmallerThanReceivedSN) {
             notAckMap.delete(key);
             successDataSoFar.push(key);
+            //increase window size by 1
+            increaseWindowSizeBy1();
         }
 
         while(notAckMap.size < windowSize && sequenceNumberToSend < dataToSend.size) {
@@ -160,8 +176,14 @@ function resendNotAckData(sequenceNumber, dataStored, currentTime) {
     udpSocket.send(objectToResend, port, host);
 }
 
+function timeoutHelper() {
+    ssthresh = Math.max(2, Math.floor(windowSize / 2));
+    windowSize = ssthresh;
+}
+
 function resendDataHelper() {
     const entriesOfMap = notAckMap.entries();
+    let timeoutOrNot = false;
 
     for(const [sequenceNumber, {dataStored, createTime}] of entriesOfMap) {
         
@@ -169,6 +191,7 @@ function resendDataHelper() {
         if(updatedTime < Date.now()) {
             //resend the data
             resendNotAckData(sequenceNumber, dataStored, createTime);
+            timeoutOrNot = true;
 
             const currentTime = Date.now();
             notAckMap.set(sequenceNumber, 
@@ -177,6 +200,10 @@ function resendDataHelper() {
                     createTime: currentTime
                 });
         }
+    }
+    //reset the ssthresh and window size cuz of timeout
+    if(timeoutOrNot) {
+        timeoutHelper();
     }
 }
 
