@@ -18,6 +18,17 @@ function checkSender(address, port) {
     return address === senderAddress && port === senderPort;
 }
 
+function checksumHelper(info) {
+    const total = 0;
+    const infoArray = info.split("");
+    for(const eachChar of infoArray) {
+        const charEncoded = eachChar.charCodeAt(0);
+        const multipliedBy3 = charEncoded * 3;
+        total += multipliedBy3;
+    }
+    return total;
+}
+
 function checkForEarlyData() {
     
 const keysFromMap = Array.from(receivedEarlyMap.keys());
@@ -26,6 +37,8 @@ for(const key of keysFromMap) {
     if(key == sequenceNumberWaitingFor) {
         //print out stdout
         printDataStdout(receivedEarlyMap.get(key));
+        //remove from map
+        receivedEarlyMap.delete(key);
     }
 }
 }
@@ -63,9 +76,9 @@ function processDatagram(newDatagram, rinfo) {
             receivedEarlyMap.set(sequenceNumber, info);
         }
         else if(currentSequenceNumber < sequenceNumberWaitingFor) {
+            sendAckHelper(newDatagram);
             return;
             //send ack even for duplicate data
-            sendAckHelper(newDatagram);
         }
         else {
             //print out stdout
