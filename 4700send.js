@@ -2,8 +2,8 @@ const datagram = require("dgram");
 const fs = require("fs");
 
 const udpSocket = datagram.createSocket("udp4");
-const host = null;
-const port = null;
+let host = null;
+let port = null;
 
 let dataToSend = new Map();
 let successDataSoFar = [];
@@ -14,23 +14,25 @@ let windowSize = 2;
 let stringToSend = "";
 
 function checksumHelper(data) {
-    const total = 0;
+    let total = 0;
     const dataArray = data.split("");
     for(const eachChar of dataArray) {
         const charEncoded = eachChar.charCodeAt(0);
+        const multipliedBy3 = charEncoded * 3;
+        total += multipliedBy3;
     }
     return total;
 }
 function prepareDataToSend(stringToSend) {
-    const checknumCalculate = checksumHelper(data);
-    const dataToSend = JSON.stringify({
-        sequenceNumber: sequenceNumberToSend,
+    const checknumCalculate = checksumHelper(stringToSend);
+    const packetToStore = {
+        sequenceNumber: dataToSend.size,
         info: stringToSend,
         checksum: checknumCalculate
-    });
+    };
     stringToSend = "";
     //store it
-    dataToSend.set(sequenceNumberToSend, dataToSend);
+    dataToSend.set(dataToSend.size, packetToStore);
 
     
 }
@@ -42,7 +44,7 @@ function appendDataHelper(chunk) {
     else {
         stringToSend += chunk;
     }
-    if(stringToSend.length > 1375) {
+    while(stringToSend.length > 1375) {
         let actualToSend = stringToSend.slice(0, 1375);
         prepareDataToSend(actualToSend);
         //update stringToSend to leftover
@@ -51,15 +53,15 @@ function appendDataHelper(chunk) {
 }
 
 function sendDataHelper() {
-    const dataToSend = dataToSend.get(sequenceNumberToSend);
-    const checksumCalculate = checksumHelper(dataToSend.info);
+    const dataStored = dataToSend.get(sequenceNumberToSend);
+    const checksumCalculate = checksumHelper(dataStored.info);
     const objectToSend = JSON.stringify({
         sequenceNumber: sequenceNumberToSend,
-        info: dataToSend.info,
+        info: dataStored.info,
         checksum: checksumCalculate
     });
     udpSocket.send(objectToSend, port, host);
-    notAckMap.set(sequenceNumberToSend, dataToSend);
+    notAckMap.set(sequenceNumberToSend, dataStored);
     sequenceNumberToSend++;
 }
 
@@ -99,20 +101,20 @@ function fromReceiverHandler(msg, rinfo) {
 
         //check if can remove more from notAckMap
         const keysSmallerThanReceivedSN = Array.from(notAckMap.keys()).filter(
-            key => key < receivedReceiveSN);
+            key => key < receivedNeededSN);
 
         for(const key of keysSmallerThanReceivedSN) {
             notAckMap.delete(key);
+            successDataSoFar.push(key);
         }
 
-        while(notAckMap.size < windowSize && stringToSend.length == 1375) {
+        while(notAckMap.size < windowSize && sequenceNumberToSend < dataToSend.size) {
             sendDataHelper();
-            stringToSend = "";
         }
 
         //check if all acks are received
-        if(successDataSoFar.length == dataToSend.size) {
-            process.stdout.write("All done!\n");
+        if(dataInHasStopped && successDataSoFar.length == dataToSend.size) {
+            process.stderr.write("All done!\n");
             process.exit(0);
         }
 
@@ -125,16 +127,15 @@ function fromReceiverHandler(msg, rinfo) {
 function main() {
 
     const commandLineArgs = process.argv.slice(2);
-    const host = commandLineArgs[2];
-    const port = commandLineArgs[3];
+    host = commandLineArgs[0];
+    port = Number(commandLineArgs[1]);
 
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
         appendDataHelper(chunk);
         // if possible to send then send
-        while(notAckMap.size < windowSize && stringToSend.length == 1375) {
+        while(notAckMap.size < windowSize && sequenceNumberToSend < dataToSend.size) {
             sendDataHelper();
-            stringToSend = "";
         }
     });
 
@@ -142,13 +143,16 @@ function main() {
     process.stdin.on("end", () => {
         //check if there is data left to send
         if(stringToSend.length > 0) {
-            sendDataHelper();
+            prepareDataToSend(stringToSend);
             stringToSend = "";
         }
         dataInHasStopped = true;
+        while(notAckMap.size < windowSize && sequenceNumberToSend < dataToSend.size) {
+            sendDataHelper();
+        }
         //check if all acks 
         if(successDataSoFar.length == dataToSend.size) {
-            process.stdout.write("All done!\n");
+            process.stderr.write("All done!\n");
             process.exit(0);
         }
     });
