@@ -10,7 +10,7 @@ let successDataSoFar = [];
 let dataInHasStopped = false;
 let sequenceNumberToSend = 0;
 let notAckMap = new Map();
-let windowSize = 2;
+let windowSize = 4;
 let stringToSend = "";
 
 function checksumHelper(data) {
