@@ -80,6 +80,7 @@ function appendDataHelper(chunk) {
 function sendDataHelper() {
     const dataStored = dataToSend.get(sequenceNumberToSend);
     const checksumCalculate = checksumHelper(dataStored.info);
+
     const objectToSend = JSON.stringify({
         sequenceNumber: sequenceNumberToSend,
         info: dataStored.info,
@@ -99,6 +100,7 @@ function sendDataHelper() {
 function roundtripUpdater(createTime) {
     const totalTime = Date.now() - createTime;
     let currentNew_rtt;
+
     //for first time there is no measurement so use total time as new rtt
     if(old_rtt === 0) {
         currentNew_rtt = totalTime;
@@ -121,6 +123,7 @@ function fromReceiverHandler(msg, rinfo) {
 
         const receivedChecksum = dataFromReceiver.checksum;
         const receivedNeededSN = dataFromReceiver.NeededSN;
+
         const receivedReceiveSN = dataFromReceiver.receiveSN;
 
         const {dataStored, createTime} = notAckMap.get(receivedReceiveSN) || {};
@@ -176,8 +179,10 @@ function fromReceiverHandler(msg, rinfo) {
             process.exit(0);
         }
 
+
     } catch (error) {
         process.stderr.write(`error: ${error.message}\n`);
+
     }
 
 }
@@ -207,6 +212,7 @@ function resendDataHelper() {
         //calculate the time and check for timeout
         const updatedTime = createTime + rto;
         if(updatedTime < Date.now()) {
+
             //resend the data
             resendNotAckData(sequenceNumber, dataStored, createTime);
             timeoutOrNot = true;
@@ -249,17 +255,18 @@ function main() {
             prepareDataToSend(stringToSend);
             stringToSend = "";
         }
+
         dataInHasStopped = true;
         while(notAckMap.size < windowSize && sequenceNumberToSend < dataToSend.size) {
             sendDataHelper();
         }
         //check if all acks 
         if(successDataSoFar.length == dataToSend.size) {
-            process.stderr.write("All done!\n");
             process.exit(0);
         }
     });
 
+    
     //this is triggered when got data from receiver
     udpSocket.on("message", (msg, rinfo) => {
         fromReceiverHandler(msg, rinfo);
