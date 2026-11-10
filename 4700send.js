@@ -59,7 +59,7 @@ function prepareDataToSend(stringToSend) {
     
 }
 
-//helper function to make 1 string is size 1400 so that it can be sent
+//helper function to make 1 string of size 1400 so that it can be sent
 function appendDataHelper(chunk) {
     if(stringToSend == "") {
         stringToSend = chunk;
@@ -172,12 +172,12 @@ function fromReceiverHandler(msg, rinfo) {
 
         //check if all acks are received
         if(dataInHasStopped && successDataSoFar.length == dataToSend.size) {
-            process.stderr.write("All done!\n");
+            process.stderr.write("all acks are received yayy!\n");
             process.exit(0);
         }
 
     } catch (error) {
-        process.stderr.write(`Error: ${error.message}\n`);
+        process.stderr.write(`error: ${error.message}\n`);
     }
 
 }
